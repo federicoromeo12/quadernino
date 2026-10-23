@@ -112,6 +112,9 @@ const TUNING = {
   waszp: ['Rig size', 'Downhaul',   'Wand length', 'Ride height'],
   finn: ['Mast rake', 'Mast partners wedge',   'Outhaul'],
 };
+const LOGO = { optimist: 'Optimist.svg', 'ilca 4': 'ILCA_4-6-7.svg', 'ilca 6': 'ILCA_4-6-7.svg', 'ilca 7': 'ILCA_4-6-7.svg', 420: '420.svg', 470: '470.svg', '29er': '29er.svg', '49er': '49er.svg',
+  'nacra 15': 'Nacra_15_Nacra-brand.png', 'nacra 17': 'Nacra_17.svg', 'techno 293': 'Techno_293.png', iqfoil: 'iQFoil.png', waszp: 'Waszp.png', finn: 'Finn.svg' };
+const logo = c => { const f = LOGO[String(c || '').trim().toLowerCase()]; return f ? `<img class="logo" src="class-logos/${f}" alt="">` : ''; };
 const EXTRA_TUNING = ['Vang', 'Cunningham', 'Outhaul', 'Jib halyard', 'Traveller'];
 const SECTIONS = ['changes', 'waves', 'current', 'tide', 'sky', 'temps', 'tuning', 'setup', 'feel', 'photos'];
 const SEC_LABEL = { changes: 'changes', waves: 'waves', current: 'current', tide: 'tide', sky: 'sky', temps: 'temps', tuning: 'tuning', setup: 'setup', feel: 'feeling', photos: 'photos' };
@@ -137,6 +140,7 @@ const seg = (s, name, opts) => `<div class="seg" role="radiogroup">${opts.map(o 
   `<label><input type="radio" name="${name}" value="${o}" ${get(s, name) === o ? 'checked' : ''}><span>${t('opt_' + o)}</span></label>`).join('')}</div>`;
 const field = (label, inner) => `<div class="field"><span class="lbl">${label}</span>${inner}</div>`;
 const input = (s, name, type = 'text', extra = '') => `<input type="${type}" name="${name}" value="${esc(get(s, name))}" ${extra}>`;
+const OTHER = '__other';
 const SHIFTY = ['oscillating', 'persistent'];
 const sec = (id, inner) => `<div data-sec="${id}">${inner}</div>`;
 const sh = (tone, ic, label) => `<h2 class="sh"><span class="ico ${tone}">${icon(ic)}</span>${label}</h2>`;
@@ -150,7 +154,7 @@ function sessionCard(s) {
   const w = s.wind || {};
   const chips = [
     s.type && `<span class="chip ${s.type === 'regatta' ? 'hot' : ''}">${t('opt_' + s.type)}</span>`,
-    s.class && `<span class="chip plain">${esc(s.class)}</span>`,
+    s.class && `<span class="chip plain">${logo(s.class)}${esc(s.class)}</span>`,
     (w.dir || w.speed) && `<span class="chip plain">${w.dir ? dirLabel(w.dir) : ''} ${w.speed ? w.speed + (w.gust ? '–' + w.gust : '') + ' kn' : ''}</span>`,
     s.feel && `<span>${FEEL[s.feel - 1]}</span>`,
   ].filter(Boolean).join('');
@@ -258,8 +262,14 @@ async function formView(id) {
     </section>
 
     <section class="card t-lav">${sh('lav', 'boat', t('boat'))}
-      <label class="field"><span class="lbl">${t('class')}</span>${input(s, 'class', 'text', 'list="classes"')}
-        <datalist id="classes">${CLASSES.map(c => `<option value="${c}">`).join('')}</datalist></label>
+      <div class="field"><span class="lbl">${t('class')}</span>
+        <input type="hidden" name="class" value="${esc(s.class)}">
+        <div class="carousel"><button type="button" class="arr" data-d="-1" aria-label="‹">‹</button>
+          <div class="slides" id="slides">${['', ...CLASSES, OTHER].map(c => `<div class="slide" data-c="${c}">${c === OTHER
+            ? `<div class="more-ico">…</div><input id="classOther" value="${esc(CLASSES.some(k => ckey(k) === ckey(s.class)) ? '' : s.class)}" placeholder="${t('other_classes')}">`
+            : `${logo(c) || '<div class="more-ico">?</div>'}<b>${c || t('opt_none')}</b>`}</div>`).join('')}</div>
+          <button type="button" class="arr" data-d="1" aria-label="›">›</button></div>
+      </div>
       ${sec('tuning', '<div id="tuning"></div>')}
       ${sec('setup', `<label class="field"><span class="lbl">${t('setup')}</span>${area(s, 'setup', t('setup_ph'))}</label>`)}
     </section>
@@ -361,7 +371,23 @@ async function formView(id) {
     document.getElementById('seaCard').hidden = !document.querySelector('#seaCard [data-sec]:not([hidden])');
   };
   const readTuning = () => { tunEl.querySelectorAll('.t-in').forEach(i => { tuning[i.dataset.k] = i.value.trim(); }); };
-  f.elements.class.addEventListener('input', () => { readTuning(); drawTuning(); applySections(); });
+  // class picker: swipe through the logos, the slide in view is the class ("Other" has a text box)
+  const cin = f.elements.class, slides = document.getElementById('slides'), other = document.getElementById('classOther');
+  const classChanged = () => { readTuning(); drawTuning(); applySections(); };
+  let settle;
+  slides.onscroll = () => {
+    clearTimeout(settle);
+    settle = setTimeout(() => {
+      const c = slides.children[Math.round(slides.scrollLeft / slides.clientWidth)]?.dataset.c;
+      if (c == null) return;
+      cin.value = c === OTHER ? other.value.trim() : c;
+      classChanged();
+    }, 120);
+  };
+  other.oninput = () => { cin.value = other.value.trim(); classChanged(); };
+  f.querySelectorAll('.arr').forEach(b => b.onclick = () => slides.scrollBy({ left: b.dataset.d * slides.clientWidth, behavior: 'smooth' }));
+  const start = [...slides.children].findIndex(el => ckey(el.dataset.c) === ckey(cin.value));
+  slides.scrollTo({ left: (start >= 0 ? start : cin.value ? slides.children.length - 1 : 0) * slides.clientWidth, behavior: 'instant' });
   drawTuning(); applySections();
 
   // regatta → races
@@ -477,7 +503,7 @@ async function sessionView(id) {
     <a class="btn ghost small" href="#/edit/${s.id}">${t('edit')}</a></div>
   <div class="row" style="margin:-6px 0 14px">
     ${s.type ? `<span class="chip ${s.type === 'regatta' ? 'hot' : ''}">${opt(s.type)}</span>` : ''}
-    ${s.class ? `<span class="chip plain">${esc(s.class)}</span>` : ''}
+    ${s.class ? `<span class="chip plain">${logo(s.class)}${esc(s.class)}</span>` : ''}
     ${s.feel ? `<span style="font-size:22px">${FEEL[s.feel - 1]}</span>` : ''}
   </div>
   <section class="card"><h2>${t('wind')}</h2>${rows([
