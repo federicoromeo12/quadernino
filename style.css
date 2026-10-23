@@ -136,3 +136,4 @@ dd { margin: 0; font-weight: 600; }
 .empty { text-align: center; padding: 48px 8px; }
 .empty h2 { font-size: 20px; color: var(--ink); text-transform: none; letter-spacing: 0; }
 .back { display: inline-block; font-weight: 600; text-decoration: none; margin-bottom: 4px; }
+[hidden] { display: none !important; }

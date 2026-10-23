@@ -34,7 +34,7 @@ const T = {
     opt_training: 'Training', opt_regatta: 'Regatta', opt_other: 'Other',
     boat: 'Boat', class: 'Class', setup: 'Setup', setup_ph: 'Sails, mast rake, settings…',
     wind: 'Wind', direction: 'Direction (coming from)', speed: 'Average (kn)', gust: 'Gusts (kn)', shifts: 'Shifts',
-    opt_steady: 'Steady', opt_oscillating: 'Oscillating', opt_persistent: 'Persistent',
+    shift_a: 'Shifts from', shift_b: 'to', gust_dir: 'Gusts come from', changes: 'Changes during the session', add_change: '+ Add change', at: 'At', tuning: 'Tuning', opt_steady: 'Steady', opt_oscillating: 'Oscillating', opt_persistent: 'Persistent',
     sea: 'Sea & sky', waves: 'Waves', opt_flat: 'Flat', opt_chop: 'Chop', opt_swell: 'Swell',
     current: 'Current', opt_none: 'None', opt_light: 'Light', opt_strong: 'Strong',
     tide: 'Tide', opt_rising: 'Rising', opt_falling: 'Falling', opt_high: 'High', opt_low: 'Low',
@@ -59,7 +59,7 @@ const T = {
     opt_training: 'Allenamento', opt_regatta: 'Regata', opt_other: 'Altro',
     boat: 'Barca', class: 'Classe', setup: 'Regolazioni', setup_ph: 'Vele, inclinazione albero, regolazioni…',
     wind: 'Vento', direction: 'Direzione (da dove arriva)', speed: 'Media (nodi)', gust: 'Raffiche (nodi)', shifts: 'Salti',
-    opt_steady: 'Stabile', opt_oscillating: 'Oscillante', opt_persistent: 'Persistente',
+    shift_a: 'Salti da', shift_b: 'a', gust_dir: 'Le raffiche arrivano da', changes: 'Cambiamenti durante l’uscita', add_change: '+ Aggiungi cambiamento', at: 'Alle', tuning: 'Tuning', opt_steady: 'Stabile', opt_oscillating: 'Oscillante', opt_persistent: 'Persistente',
     sea: 'Mare e cielo', waves: 'Onda', opt_flat: 'Piatto', opt_chop: 'Onda corta', opt_swell: 'Onda lunga',
     current: 'Corrente', opt_none: 'Assente', opt_light: 'Debole', opt_strong: 'Forte',
     tide: 'Marea', opt_rising: 'Crescente', opt_falling: 'Calante', opt_high: 'Alta', opt_low: 'Bassa',
@@ -87,12 +87,31 @@ const dirLabel = d => (lang === 'it' ? d.replace(/W/g, 'O') : d);
 const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const fmtDate = d => (d ? new Date(d + 'T00:00').toLocaleDateString(lang, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }) : '');
 const today = () => new Date().toLocaleDateString('sv'); // YYYY-MM-DD local
+// randomUUID only exists on https/localhost; phones on the home Wi-Fi use plain http
+const newId = () => crypto.randomUUID?.() ?? Date.now().toString(36) + Math.random().toString(36).slice(2);
 const isImg = s => typeof s === 'string' && s.startsWith('data:image/');
 const FEEL = ['😫', '😕', '😐', '🙂', '🤩'];
 const CLASSES = ['Optimist', 'ILCA 4', 'ILCA 6', 'ILCA 7', '420', '470', '29er', '49er', 'Nacra 15', 'Nacra 17', 'Techno 293', 'iQFoil', 'Waszp', 'Finn'];
+// Tuning fields per class (sailing jargon, same in every language). Extend a list to add a field.
+const ILCA = [   'Mast ring / rake', 'Traveller / sheet'];
+const TUNING = {
+  optimist: ['Mast rake', 'Sprit tension', 'Boom vang',  'Daggerboard'],
+  'ilca 4': ILCA, 'ilca 6': ILCA, 'ilca 7': ILCA,
+  420: ['Shrouds tension', 'Rake', 'Mast foot pin', 'Spreaders (length / angle)', 'Forestay / jib halyard',    'Jib leads'],
+  470: ['Shrouds tension', 'Rake', 'Mast foot pin', 'Spreaders',    'Jib leads'],
+  '29er': ['Shrouds tension', 'Rake', 'Spreaders',    'Jib leads', 'Gennaker setup'],
+  '49er': ['Shrouds tension', 'Rake', 'Spreaders',    'Jib leads'],
+  'nacra 15': ['Diamonds', 'Shrouds tension', 'Rake', 'Mast foot', 'Spreaders',   'Jib leads', 'Rudder rake'],
+  'nacra 17': ['Diamonds', 'Shrouds tension', 'Rake', 'Mast foot', 'Spreaders',   'Jib leads', 'Rudder rake', 'Daggerboard rake'],
+  'techno 293': ['Mast foot position', 'Downhaul',  'Boom height', 'Fin'],
+  iqfoil: ['Mast foot position', 'Downhaul',  'Boom height', 'Foil / front wing', 'Mast track'],
+  waszp: ['Rig size', 'Downhaul',   'Wand length', 'Ride height'],
+  finn: ['Mast rake', 'Mast partners wedge',   'Outhaul'],
+};
+const tuningFor = c => TUNING[String(c || '').trim().toLowerCase()] || [];
 const OPTS = {
   type: ['training', 'regatta', 'other'], shifts: ['steady', 'oscillating', 'persistent'], waves: ['flat', 'chop', 'swell'],
-  current: ['none', 'light', 'strong'], tide: ['rising', 'falling', 'high', 'low'], sky: ['sunny', 'partly', 'cloudy', 'rain', 'storm'],
+  current: ['none', 'light', 'strong'], tide: ['none', 'rising', 'falling', 'high', 'low'], sky: ['sunny', 'partly', 'cloudy', 'rain', 'storm'],
 };
 const get = (s, path) => path.split('.').reduce((o, k) => o?.[k], s);
 
@@ -100,6 +119,7 @@ const seg = (s, name, opts) => `<div class="seg" role="radiogroup">${opts.map(o 
   `<label><input type="radio" name="${name}" value="${o}" ${get(s, name) === o ? 'checked' : ''}><span>${t('opt_' + o)}</span></label>`).join('')}</div>`;
 const field = (label, inner) => `<div class="field"><span class="lbl">${label}</span>${inner}</div>`;
 const input = (s, name, type = 'text', extra = '') => `<input type="${type}" name="${name}" value="${esc(get(s, name))}" ${extra}>`;
+const dirSel = (s, name) => `<select name="${name}"><option value=""></option>${DIRS.map(d => `<option value="${d}" ${get(s, name) === d ? 'selected' : ''}>${dirLabel(d)}</option>`).join('')}</select>`;
 const area = (s, name, ph = '') => `<textarea name="${name}" placeholder="${esc(ph)}">${esc(get(s, name))}</textarea>`;
 
 /* ---------- views ---------- */
@@ -136,6 +156,8 @@ async function formView(id) {
   let venue = s.venue || null;
   let photos = [...(s.photos || [])];
   let races = s.races?.length ? s.races : [{}];
+  let changes = [...(s.wind?.changes || [])];
+  let tuning = { ...s.tuning };
 
   app.innerHTML = `
   <a class="back" href="${id ? '#/s/' + id : '#/'}">‹ ${t('cancel')}</a>
@@ -158,6 +180,7 @@ async function formView(id) {
     <section class="card"><h2>${t('boat')}</h2>
       <label class="field"><span class="lbl">${t('class')}</span>${input(s, 'class', 'text', 'list="classes"')}
         <datalist id="classes">${CLASSES.map(c => `<option value="${c}">`).join('')}</datalist></label>
+      <div id="tuning"></div>
       <label class="field"><span class="lbl">${t('setup')}</span>${area(s, 'setup', t('setup_ph'))}</label>
     </section>
 
@@ -170,7 +193,15 @@ async function formView(id) {
         <label class="field"><span class="lbl">${t('speed')}</span>${input(s, 'wind.speed', 'number', 'min="0" max="80" step="0.5" inputmode="decimal"')}</label>
         <label class="field"><span class="lbl">${t('gust')}</span>${input(s, 'wind.gust', 'number', 'min="0" max="90" step="0.5" inputmode="decimal"')}</label>
       </div>
+      <label class="field" id="gustDirF"><span class="lbl">${t('gust_dir')}</span>${dirSel(s, 'wind.gustDir')}</label>
       ${field(t('shifts'), seg(s, 'wind.shifts', OPTS.shifts))}
+      <div class="grid" id="shiftF">
+        <label class="field"><span class="lbl">${t('shift_a')}</span>${dirSel(s, 'wind.shiftA')}</label>
+        <label class="field"><span class="lbl">${t('shift_b')}</span>${dirSel(s, 'wind.shiftB')}</label>
+      </div>
+      <h2 style="margin-top:16px">${t('changes')}</h2>
+      <div id="changes"></div>
+      <button type="button" class="btn ghost small" id="addChange">${t('add_change')}</button>
     </section>
 
     <section class="card"><h2>${t('sea')}</h2>
@@ -213,6 +244,37 @@ async function formView(id) {
   // tap a selected chip again to clear it
   f.addEventListener('pointerdown', e => { const i = e.target.closest('label')?.querySelector('input[type=radio]'); if (i) i.dataset.was = i.checked; });
   f.addEventListener('click', e => { const i = e.target.closest('label')?.querySelector('input[type=radio]'); if (i && e.target === i && i.dataset.was === 'true') { i.checked = false; i.dataset.was = 'false'; } });
+
+  // gust / shift direction fields only when relevant
+  const showWind = () => {
+    document.getElementById('gustDirF').hidden = !f.elements['wind.gust'].value;
+    document.getElementById('shiftF').hidden = !f.elements['wind.shifts'].value;
+  };
+  f.addEventListener('input', showWind); f.addEventListener('change', showWind); showWind();
+
+  // wind changes over time
+  const chEl = document.getElementById('changes');
+  const drawChanges = () => {
+    chEl.innerHTML = changes.map((c, i) => `<div class="race"><div class="grid">
+      <label class="field"><span class="lbl">${t('at')}</span><input class="c-time" type="time" value="${esc(c.time)}"></label>
+      <label class="field"><span class="lbl">${t('direction').split(' (')[0]}</span>${dirSel({ c }, 'c.dir').replace('<select', '<select class="c-dir"')}</label>
+      <label class="field"><span class="lbl">${t('speed')}</span><input class="c-speed" type="number" min="0" max="80" step="0.5" inputmode="decimal" value="${esc(c.speed)}"></label></div>
+      <button type="button" class="btn danger small" data-rm="${i}">${t('remove')}</button></div>`).join('');
+  };
+  const readChanges = () => [...chEl.querySelectorAll('.race')].map(el => ({ time: el.querySelector('.c-time').value, dir: el.querySelector('.c-dir').value, speed: el.querySelector('.c-speed').value }));
+  chEl.onclick = e => { const i = e.target.dataset.rm; if (i != null) { changes = readChanges(); changes.splice(+i, 1); drawChanges(); } };
+  document.getElementById('addChange').onclick = () => { changes = [...readChanges(), {}]; drawChanges(); };
+  drawChanges();
+
+  // tuning fields follow the class
+  const tunEl = document.getElementById('tuning');
+  const drawTuning = () => {
+    tunEl.innerHTML = tuningFor(f.elements.class.value).length ? `<span class="lbl muted" style="font-size:13px;font-weight:600">${t('tuning')}</span><div class="grid">${tuningFor(f.elements.class.value).map(k =>
+      `<label class="field"><span class="lbl">${k}</span><input class="t-in" data-k="${esc(k)}" value="${esc(tuning[k])}"></label>`).join('')}</div>` : '';
+  };
+  const readTuning = () => { tunEl.querySelectorAll('.t-in').forEach(i => { tuning[i.dataset.k] = i.value.trim(); }); };
+  f.elements.class.addEventListener('input', () => { readTuning(); drawTuning(); });
+  drawTuning();
 
   // regatta → races
   const racesCard = document.getElementById('racesCard'), racesEl = document.getElementById('races');
@@ -272,7 +334,8 @@ async function formView(id) {
 
   f.onsubmit = async e => {
     e.preventDefault();
-    const out = { ...s, id: s.id || crypto.randomUUID(), venue, photos, updated: Date.now() };
+    const out = { ...s, id: s.id || newId(), venue, photos, updated: Date.now() };
+    readTuning();
     for (const el of f.elements) {
       if (!el.name) continue;
       const [a, b] = el.name.split('.');
@@ -281,6 +344,11 @@ async function formView(id) {
       if (a === 'feel' && v) v = +v;
       if (b) (out[a] = { ...out[a] })[b] = v; else out[a] = v;
     }
+    const keep = tuningFor(out.class);
+    out.tuning = Object.fromEntries(keep.filter(k => tuning[k]).map(k => [k, tuning[k]]));
+    if (f.elements['wind.gust'].value === '') out.wind.gustDir = '';
+    if (!out.wind.shifts) out.wind.shiftA = out.wind.shiftB = '';
+    out.wind.changes = readChanges().filter(c => c.time || c.dir || c.speed);
     out.races = out.type === 'regatta' ? readRaces().filter(r => r.result || r.notes) : [];
     if (out.class) store.set('lastClass', out.class);
     await db.put(out);
@@ -326,13 +394,15 @@ async function sessionView(id) {
     ${s.feel ? `<span style="font-size:22px">${FEEL[s.feel - 1]}</span>` : ''}
   </div>
   <section class="card"><h2>${t('wind')}</h2>${rows([
-    [t('direction'), w.dir && dirLabel(w.dir)], [t('speed'), w.speed], [t('gust'), w.gust], [t('shifts'), opt(w.shifts)]])}</section>
+    [t('direction'), w.dir && dirLabel(w.dir)], [t('speed'), w.speed], [t('gust'), w.gust], [t('gust_dir'), w.gustDir && dirLabel(w.gustDir)], [t('shifts'), opt(w.shifts)],
+    [t('shift_a') + ' → ' + t('shift_b'), w.shiftA || w.shiftB ? `${dirLabel(w.shiftA || '?')} → ${dirLabel(w.shiftB || '?')}` : null],
+    ...(w.changes || []).map(c => [c.time || '—', [c.dir && dirLabel(c.dir), c.speed && c.speed + ' kn'].filter(Boolean).join(' · ')])])}</section>
   <section class="card"><h2>${t('sea')}</h2>${rows([
     [t('waves'), opt(sea.waves)], [t('current'), opt(sea.current)], [t('tide'), opt(sea.tide)], [t('sky'), opt(sea.sky)], [t('air'), sea.air], [t('water'), sea.water]])}</section>
   ${s.races?.length ? `<section class="card"><h2>${t('races')}</h2>${s.races.map((r, i) =>
     `<div class="race"><div class="row spread"><b>${t('race')} ${i + 1}</b><span class="chip hot">${esc(r.result) || '—'}</span></div>${r.notes ? `<p class="text">${esc(r.notes)}</p>` : ''}</div>`).join('')}</section>` : ''}
   ${s.good || s.work || s.notes ? `<section class="card"><h2>${t('reflection')}</h2>${text(t('good'), s.good)}${text(t('work'), s.work)}${text(t('notes'), s.notes)}</section>` : ''}
-  ${s.setup ? `<section class="card"><h2>${t('boat')}</h2>${text(t('setup'), s.setup)}</section>` : ''}
+  ${s.setup || Object.keys(s.tuning || {}).length ? `<section class="card"><h2>${t('boat')}</h2>${rows(Object.entries(s.tuning || {}))}${text(t('setup'), s.setup)}</section>` : ''}
   ${s.photos?.filter(isImg).length ? `<section class="card"><h2>${t('photos')}</h2><div class="photos">${s.photos.filter(isImg).map(p => `<figure><img src="${p}" alt=""></figure>`).join('')}</div></section>` : ''}`;
 }
 
