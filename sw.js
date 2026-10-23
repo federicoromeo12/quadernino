@@ -7,8 +7,8 @@ self.addEventListener('activate', e => e.waitUntil(self.clients.claim()));
 self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET' || new URL(e.request.url).origin !== location.origin) return; // place search goes straight to the network
   e.respondWith(
-    fetch(e.request)
-      .then(r => { const copy = r.clone(); caches.open(CACHE).then(c => c.put(e.request, copy)); return r; })
+    fetch(e.request, { cache: 'reload' }) // skip the browser's own cache, or a stale 404/old file outlives a deploy
+      .then(r => { if (r.ok) { const copy = r.clone(); caches.open(CACHE).then(c => c.put(e.request, copy)); } return r; })
       .catch(() => caches.match(e.request, { ignoreSearch: true }))
   );
 });
