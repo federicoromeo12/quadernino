@@ -1,4 +1,4 @@
-import { DIRS, venueKey, groupByVenue, windSummary, sortByDate } from './logic.js';
+import { DIRS, venueKey, groupByVenue, windSummary, sortByDate, overview } from './logic.js';
 
 /* ---------- storage (IndexedDB, on this device only) ---------- */
 const dbp = new Promise((res, rej) => {
@@ -28,6 +28,8 @@ if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
 /* ---------- i18n ---------- */
 const T = {
   en: {
+    form_sub: 'Log what you saw on the water', custom: 'New session form', custom_text: 'Choose which parts appear when you add a session. Suggestions follow the class; the final choice is yours.', other_classes: 'Other classes', reset: 'Reset to suggested', sections: 'Sections', tuning_params: 'Tuning fields', temps: 'Temperatures',
+    home: 'Home', hero: 'Your sailing at a glance', trend: 'Wind over time', avg_l: 'Average', gust_l: 'Gusts', peak: 'Strongest wind', avg_mood: 'Average mood', latest: 'Latest session', see_all: 'See all', kn: 'kn',
     sessions: 'Sessions', venues: 'Venues', settings: 'Settings', new_session: 'New session', edit_session: 'Edit session',
     empty_title: 'Your notebook is empty', empty_text: 'After every session on the water, write down what you saw and how you felt. Next time at the same venue, you will know more than everyone else.',
     when: 'When', date: 'Date', start: 'Start', end: 'End', venue: 'Venue', venue_ph: 'Type a place, lake, bay, club…', linked: '✓ Linked to map', type: 'Session type',
@@ -53,6 +55,8 @@ const T = {
     storage_warn: 'The browser may clear data it thinks is unused. Add the app to your home screen and export backups.',
   },
   it: {
+    form_sub: 'Scrivi cosa hai visto in acqua', custom: 'Modulo nuova uscita', custom_text: 'Scegli quali parti compaiono quando aggiungi un’uscita. I suggerimenti seguono la classe; l’ultima parola è tua.', other_classes: 'Altre classi', reset: 'Ripristina suggeriti', sections: 'Sezioni', tuning_params: 'Campi di tuning', temps: 'Temperature',
+    home: 'Home', hero: 'Il tuo mare in un colpo d’occhio', trend: 'Vento nel tempo', avg_l: 'Media', gust_l: 'Raffiche', peak: 'Vento più forte', avg_mood: 'Umore medio', latest: 'Ultima uscita', see_all: 'Vedi tutte', kn: 'nodi',
     sessions: 'Uscite', venues: 'Luoghi', settings: 'Impostazioni', new_session: 'Nuova uscita', edit_session: 'Modifica uscita',
     empty_title: 'Il tuo quadernino è vuoto', empty_text: 'Dopo ogni uscita in acqua, scrivi cosa hai visto e come stavi. La prossima volta nello stesso posto ne saprai più di tutti.',
     when: 'Quando', date: 'Data', start: 'Inizio', end: 'Fine', venue: 'Luogo', venue_ph: 'Scrivi un posto, lago, golfo, circolo…', linked: '✓ Collegato alla mappa', type: 'Tipo di uscita',
@@ -108,7 +112,21 @@ const TUNING = {
   waszp: ['Rig size', 'Downhaul',   'Wand length', 'Ride height'],
   finn: ['Mast rake', 'Mast partners wedge',   'Outhaul'],
 };
+const EXTRA_TUNING = ['Vang', 'Cunningham', 'Outhaul', 'Jib halyard', 'Traveller'];
+const SECTIONS = ['changes', 'waves', 'current', 'tide', 'sky', 'temps', 'tuning', 'setup', 'feel', 'photos'];
+const SEC_LABEL = { changes: 'changes', waves: 'waves', current: 'current', tide: 'tide', sky: 'sky', temps: 'temps', tuning: 'tuning', setup: 'setup', feel: 'feeling', photos: 'photos' };
+const ckey = c => String(c || '').trim().toLowerCase();
 const tuningFor = c => TUNING[String(c || '').trim().toLowerCase()] || [];
+const poolFor = c => [...new Set([...tuningFor(c), ...EXTRA_TUNING])];
+// shortcut: suggestions are a guess by class (small boats sail lakes, so no tide/current); the user overrides in Settings
+const suggest = c => {
+  const off = new Set(['temps']);
+  if (['optimist', 'ilca 4', 'ilca 6'].includes(ckey(c))) ['tide', 'current'].forEach(x => off.add(x));
+  if (!tuningFor(c).length) off.add('tuning');
+  return { sec: SECTIONS.filter(x => !off.has(x)), tun: tuningFor(c) };
+};
+const cfgAll = () => { try { return JSON.parse(store.get('cfg')) || {}; } catch { return {}; } };
+const cfgFor = c => { const a = cfgAll(), k = ckey(c); return a[k] ?? (k in TUNING ? suggest(c) : a[''] ?? suggest('')); };
 const OPTS = {
   type: ['training', 'regatta', 'other'], shifts: ['steady', 'oscillating', 'persistent'], waves: ['flat', 'chop', 'swell'],
   current: ['none', 'light', 'strong'], tide: ['none', 'rising', 'falling', 'high', 'low'], sky: ['sunny', 'partly', 'cloudy', 'rain', 'storm'],
@@ -119,6 +137,9 @@ const seg = (s, name, opts) => `<div class="seg" role="radiogroup">${opts.map(o 
   `<label><input type="radio" name="${name}" value="${o}" ${get(s, name) === o ? 'checked' : ''}><span>${t('opt_' + o)}</span></label>`).join('')}</div>`;
 const field = (label, inner) => `<div class="field"><span class="lbl">${label}</span>${inner}</div>`;
 const input = (s, name, type = 'text', extra = '') => `<input type="${type}" name="${name}" value="${esc(get(s, name))}" ${extra}>`;
+const SHIFTY = ['oscillating', 'persistent'];
+const sec = (id, inner) => `<div data-sec="${id}">${inner}</div>`;
+const sh = (tone, ic, label) => `<h2 class="sh"><span class="ico ${tone}">${icon(ic)}</span>${label}</h2>`;
 const dirSel = (s, name) => `<select name="${name}"><option value=""></option>${DIRS.map(d => `<option value="${d}" ${get(s, name) === d ? 'selected' : ''}>${dirLabel(d)}</option>`).join('')}</select>`;
 const area = (s, name, ph = '') => `<textarea name="${name}" placeholder="${esc(ph)}">${esc(get(s, name))}</textarea>`;
 
@@ -142,6 +163,65 @@ function sessionCard(s) {
   </a>`;
 }
 
+const ICON = {
+  wind: '<path d="M3 9h11a3 3 0 1 0-3-3M3 15h15a3 3 0 1 1-3 3M3 12h7"/>',
+  bolt: '<path d="M13 3 5 14h6l-1 7 8-11h-6z"/>',
+  pin: '<path d="M12 21s-7-6.2-7-11.5a7 7 0 0 1 14 0C19 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/>',
+  smile: '<circle cx="12" cy="12" r="9"/><path d="M8.5 14a4.5 4.5 0 0 0 7 0M9 9.5v.01M15 9.5v.01"/>',
+  cal: '<rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16M9 3v4M15 3v4"/>',
+  wave: '<path d="M3 9c3-3 5 3 9 0s6 3 9 0M3 15c3-3 5 3 9 0s6 3 9 0"/>',
+  flag: '<path d="M5 21V4M5 4h11l-2 4 2 4H5"/>',
+  camera: '<path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/>',
+  note: '<path d="M6 3h9l4 4v14H6zM9 12h7M9 16h7"/>',
+  boat: '<path d="M12 3v13M12 4c3 2 5 6 5 12h-5M12 7c-2 1.5-4 4.5-4 9h4M4 19h16l-2 2H6z"/>',
+};
+const icon = k => `<svg viewBox="0 0 24 24" aria-hidden="true">${ICON[k]}</svg>`;
+
+// smooth line through points: horizontal tangents never overshoot the data
+const curve = pts => pts.map((p, i) => i ? `C${(pts[i - 1].x + p.x) / 2},${pts[i - 1].y} ${(pts[i - 1].x + p.x) / 2},${p.y} ${p.x},${p.y}` : `M${p.x},${p.y}`).join('');
+
+function trendChart(series) {
+  const W = 340, H = 190, L = 30, R = 14, T = 14, B = 26;
+  const top = Math.max(10, Math.ceil(Math.max(...series.map(p => Math.max(p.speed || 0, p.gust || 0))) / 5) * 5);
+  const x = i => (series.length > 1 ? L + (i * (W - L - R)) / (series.length - 1) : (L + W - R) / 2);
+  const y = v => T + (1 - v / top) * (H - T - B);
+  const line = key => series.map((p, i) => p[key] && { x: x(i), y: y(p[key]) }).filter(Boolean);
+  const [avg, gust] = [line('speed'), line('gust')];
+  const grid = [0, top / 2, top].map(v => `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" class="grid-l"/><text x="${L - 8}" y="${y(v)}" class="ax" text-anchor="end" dominant-baseline="central">${v}</text>`).join('');
+  const path = (pts, cls) => pts.length > 1 ? `<path d="${curve(pts)}" class="ln ${cls}"/>` : '';
+  const dots = (pts, cls) => pts.map(p => `<circle cx="${p.x}" cy="${p.y}" r="4.5" class="dot ${cls}"/>`).join('');
+  const area = avg.length > 1 ? `<path d="${curve(avg)} L${avg.at(-1).x},${y(0)} L${avg[0].x},${y(0)}Z" fill="url(#fillAvg)"/>` : '';
+  const d = i => new Date(series[i].date + 'T00:00').toLocaleDateString(lang, { day: 'numeric', month: 'short' });
+  return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="${t('trend')}">
+    <defs><linearGradient id="fillAvg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--c-lav)" stop-opacity=".55"/><stop offset="1" stop-color="var(--c-lav)" stop-opacity="0"/></linearGradient></defs>
+    ${grid}${area}${path(gust, 'gust')}${path(avg, 'avg')}${dots(gust, 'gust')}${dots(avg, 'avg')}
+    <text x="${x(0)}" y="${H - 6}" class="ax" text-anchor="${series.length > 1 ? 'start' : 'middle'}">${d(0)}</text>
+    ${series.length > 1 ? `<text x="${x(series.length - 1)}" y="${H - 6}" class="ax" text-anchor="end">${d(series.length - 1)}</text>` : ''}</svg>`;
+}
+
+async function homeView() {
+  const all = await db.all();
+  if (!all.length) return listView();
+  const o = overview(all);
+  const tile = (cls, ic, val, label) => `<div class="tile ${cls}"><span class="ico">${icon(ic)}</span><b>${val}</b><span class="tl">${label}</span></div>`;
+  app.innerHTML = `
+  <header class="hello"><span class="ico big">${icon('boat')}</span><div><small>${t('hero')}</small><h1>Quadernino</h1></div></header>
+  <section class="hero">
+    <div class="hero-top"><div><b class="big-n">${o.count}</b><span>${t(o.count === 1 ? 'n_session' : 'n_sessions')}</span></div>
+      <div class="legend"><i class="avg"></i>${t('avg_l')}<i class="gust"></i>${t('gust_l')}</div></div>
+    ${o.series.some(p => p.speed || p.gust) ? trendChart(o.series) : ''}
+  </section>
+  <div class="tiles">
+    ${tile('lav', 'bolt', o.peak ? `${o.peak}<small> ${t('kn')}</small>` : '—', t('peak'))}
+    ${tile('mint', 'wind', o.avg ? `${o.avg}<small> ${t('kn')}</small>` : '—', t('avg_wind').replace(/ kn$/i, ''))}
+    ${tile('peach', 'pin', o.venues, t('venues'))}
+    ${tile('pink', 'smile', o.feel ? `${FEEL[Math.round(o.feel) - 1]} <small>${o.feel}</small>` : '—', t('avg_mood'))}
+  </div>
+  <div class="row spread" style="margin-top:22px"><h2 style="margin:0">${t('latest')}</h2><a href="#/sessions" class="more">${t('see_all')} ›</a></div>
+  <div style="margin-top:12px">${sessionCard(sortByDate(all)[0])}</div>
+  <a class="btn fab" href="#/new" aria-label="${t('new_session')}">+</a>`;
+}
+
 async function listView() {
   const all = sortByDate(await db.all());
   app.innerHTML = !all.length
@@ -160,12 +240,12 @@ async function formView(id) {
   let tuning = { ...s.tuning };
 
   app.innerHTML = `
-  <a class="back" href="${id ? '#/s/' + id : '#/'}">‹ ${t('cancel')}</a>
-  <h1>${t(id ? 'edit_session' : 'new_session')}</h1>
+  <a class="back" href="${id ? '#/s/' + id : '#/sessions'}">‹ ${t('cancel')}</a>
+  <header class="hello"><span class="ico big">${icon('boat')}</span><div><small>${t('form_sub')}</small><h1>${t(id ? 'edit_session' : 'new_session')}</h1></div></header>
   <form id="f" autocomplete="off">
-    <section class="card"><h2>${t('when')}</h2>
+    <section class="hero">${sh('sky', 'cal', t('when'))}
+      <label class="field"><span class="lbl">${t('date')}</span>${input(s, 'date', 'date', 'required')}</label>
       <div class="grid">
-        <label class="field"><span class="lbl">${t('date')}</span>${input(s, 'date', 'date', 'required')}</label>
         <label class="field"><span class="lbl">${t('start')}</span>${input(s, 'start', 'time')}</label>
         <label class="field"><span class="lbl">${t('end')}</span>${input(s, 'end', 'time')}</label>
       </div>
@@ -177,14 +257,14 @@ async function formView(id) {
       ${field(t('type'), seg(s, 'type', OPTS.type))}
     </section>
 
-    <section class="card"><h2>${t('boat')}</h2>
+    <section class="card t-lav">${sh('lav', 'boat', t('boat'))}
       <label class="field"><span class="lbl">${t('class')}</span>${input(s, 'class', 'text', 'list="classes"')}
         <datalist id="classes">${CLASSES.map(c => `<option value="${c}">`).join('')}</datalist></label>
-      <div id="tuning"></div>
-      <label class="field"><span class="lbl">${t('setup')}</span>${area(s, 'setup', t('setup_ph'))}</label>
+      ${sec('tuning', '<div id="tuning"></div>')}
+      ${sec('setup', `<label class="field"><span class="lbl">${t('setup')}</span>${area(s, 'setup', t('setup_ph'))}</label>`)}
     </section>
 
-    <section class="card"><h2>${t('wind')}</h2>
+    <section class="card t-mint">${sh('mint', 'wind', t('wind'))}
       <span class="lbl muted" style="font-size:13px;font-weight:600">${t('direction')}</span>
       <div class="compass" role="radiogroup" aria-label="${t('direction')}">${DIRS.map((d, i) =>
         `<label class="${i % 4 ? '' : 'major'}" style="--a:${i * 22.5}deg"><input type="radio" name="wind.dir" value="${d}" ${s.wind?.dir === d ? 'checked' : ''}><span>${dirLabel(d)}</span></label>`).join('')}
@@ -199,36 +279,36 @@ async function formView(id) {
         <label class="field"><span class="lbl">${t('shift_a')}</span>${dirSel(s, 'wind.shiftA')}</label>
         <label class="field"><span class="lbl">${t('shift_b')}</span>${dirSel(s, 'wind.shiftB')}</label>
       </div>
-      <h2 style="margin-top:16px">${t('changes')}</h2>
-      <div id="changes"></div>
-      <button type="button" class="btn ghost small" id="addChange">${t('add_change')}</button>
+      ${sec('changes', `<span class="lbl muted" style="font-size:13px;font-weight:600">${t('changes')}</span>
+        <div id="changes"></div>
+        <button type="button" class="btn ghost small" id="addChange">${t('add_change')}</button>`)}
     </section>
 
-    <section class="card"><h2>${t('sea')}</h2>
-      ${field(t('waves'), seg(s, 'sea.waves', OPTS.waves))}
-      ${field(t('current'), seg(s, 'sea.current', OPTS.current))}
-      ${field(t('tide'), seg(s, 'sea.tide', OPTS.tide))}
-      ${field(t('sky'), seg(s, 'sea.sky', OPTS.sky))}
-      <div class="grid">
+    <section class="card t-pink" id="seaCard">${sh('pink', 'wave', t('sea'))}
+      ${sec('waves', field(t('waves'), seg(s, 'sea.waves', OPTS.waves)))}
+      ${sec('current', field(t('current'), seg(s, 'sea.current', OPTS.current)))}
+      ${sec('tide', field(t('tide'), seg(s, 'sea.tide', OPTS.tide)))}
+      ${sec('sky', field(t('sky'), seg(s, 'sea.sky', OPTS.sky)))}
+      ${sec('temps', `<div class="grid">
         <label class="field"><span class="lbl">${t('air')}</span>${input(s, 'sea.air', 'number', 'step="0.5" inputmode="decimal"')}</label>
         <label class="field"><span class="lbl">${t('water')}</span>${input(s, 'sea.water', 'number', 'step="0.5" inputmode="decimal"')}</label>
-      </div>
+      </div>`)}
     </section>
 
-    <section class="card" id="racesCard"><h2>${t('races')}</h2>
+    <section class="card t-peach" id="racesCard">${sh('peach', 'flag', t('races'))}
       <div id="races"></div>
       <button type="button" class="btn ghost small" id="addRace">${t('add_race')}</button>
     </section>
 
-    <section class="card"><h2>${t('reflection')}</h2>
-      ${field(t('feeling'), `<div class="feel" role="radiogroup">${FEEL.map((e, i) =>
-        `<label><input type="radio" name="feel" value="${i + 1}" ${s.feel == i + 1 ? 'checked' : ''} aria-label="${i + 1}/5"><span>${e}</span></label>`).join('')}</div>`)}
+    <section class="card t-lav">${sh('lav', 'note', t('reflection'))}
+      ${sec('feel', field(t('feeling'), `<div class="feel" role="radiogroup">${FEEL.map((e, i) =>
+        `<label><input type="radio" name="feel" value="${i + 1}" ${s.feel == i + 1 ? 'checked' : ''} aria-label="${i + 1}/5"><span>${e}</span></label>`).join('')}</div>`))}
       <label class="field"><span class="lbl">${t('good')}</span>${area(s, 'good')}</label>
       <label class="field"><span class="lbl">${t('work')}</span>${area(s, 'work')}</label>
       <label class="field"><span class="lbl">${t('notes')}</span>${area(s, 'notes')}</label>
     </section>
 
-    <section class="card"><h2>${t('photos')}</h2>
+    <section class="card t-mint" data-sec="photos">${sh('mint', 'camera', t('photos'))}
       <div class="photos" id="photos"></div>
       <label class="btn ghost small">${t('add_photo')}<input type="file" id="photoIn" accept="image/*" multiple hidden></label>
     </section>
@@ -248,7 +328,7 @@ async function formView(id) {
   // gust / shift direction fields only when relevant
   const showWind = () => {
     document.getElementById('gustDirF').hidden = !f.elements['wind.gust'].value;
-    document.getElementById('shiftF').hidden = !f.elements['wind.shifts'].value;
+    document.getElementById('shiftF').hidden = !SHIFTY.includes(f.elements['wind.shifts'].value); // steady: no shift directions
   };
   f.addEventListener('input', showWind); f.addEventListener('change', showWind); showWind();
 
@@ -258,8 +338,8 @@ async function formView(id) {
     chEl.innerHTML = changes.map((c, i) => `<div class="race"><div class="grid">
       <label class="field"><span class="lbl">${t('at')}</span><input class="c-time" type="time" value="${esc(c.time)}"></label>
       <label class="field"><span class="lbl">${t('direction').split(' (')[0]}</span>${dirSel({ c }, 'c.dir').replace('<select', '<select class="c-dir"')}</label>
-      <label class="field"><span class="lbl">${t('speed')}</span><input class="c-speed" type="number" min="0" max="80" step="0.5" inputmode="decimal" value="${esc(c.speed)}"></label></div>
-      <button type="button" class="btn danger small" data-rm="${i}">${t('remove')}</button></div>`).join('');
+      <label class="field"><span class="lbl">${t('speed')}</span><input class="c-speed" type="number" min="0" max="80" step="0.5" inputmode="decimal" value="${esc(c.speed)}"></label>
+      <div class="field"><span class="lbl">&nbsp;</span><button type="button" class="btn danger small wide" data-rm="${i}">${t('remove')}</button></div></div></div>`).join('');
   };
   const readChanges = () => [...chEl.querySelectorAll('.race')].map(el => ({ time: el.querySelector('.c-time').value, dir: el.querySelector('.c-dir').value, speed: el.querySelector('.c-speed').value }));
   chEl.onclick = e => { const i = e.target.dataset.rm; if (i != null) { changes = readChanges(); changes.splice(+i, 1); drawChanges(); } };
@@ -269,12 +349,20 @@ async function formView(id) {
   // tuning fields follow the class
   const tunEl = document.getElementById('tuning');
   const drawTuning = () => {
-    tunEl.innerHTML = tuningFor(f.elements.class.value).length ? `<span class="lbl muted" style="font-size:13px;font-weight:600">${t('tuning')}</span><div class="grid">${tuningFor(f.elements.class.value).map(k =>
+    const c = f.elements.class.value, on = cfgFor(c).tun;
+    const ks = poolFor(c).filter(k => on.includes(k) || tuning[k]); // a field that already holds a value stays visible
+    tunEl.innerHTML = ks.length ? `<span class="lbl muted" style="font-size:13px;font-weight:600">${t('tuning')}</span><div class="grid">${ks.map(k =>
       `<label class="field"><span class="lbl">${k}</span><input class="t-in" data-k="${esc(k)}" value="${esc(tuning[k])}"></label>`).join('')}</div>` : '';
   };
+  // settings decide which parts of the form show; hidden inputs keep their values
+  const applySections = () => {
+    const on = new Set(cfgFor(f.elements.class.value).sec);
+    f.querySelectorAll('[data-sec]').forEach(el => { el.hidden = !on.has(el.dataset.sec); });
+    document.getElementById('seaCard').hidden = !document.querySelector('#seaCard [data-sec]:not([hidden])');
+  };
   const readTuning = () => { tunEl.querySelectorAll('.t-in').forEach(i => { tuning[i.dataset.k] = i.value.trim(); }); };
-  f.elements.class.addEventListener('input', () => { readTuning(); drawTuning(); });
-  drawTuning();
+  f.elements.class.addEventListener('input', () => { readTuning(); drawTuning(); applySections(); });
+  drawTuning(); applySections();
 
   // regatta → races
   const racesCard = document.getElementById('racesCard'), racesEl = document.getElementById('races');
@@ -329,7 +417,7 @@ async function formView(id) {
   drawPhotos();
 
   document.getElementById('del')?.addEventListener('click', async () => {
-    if (confirm(t('confirm_delete'))) { await db.del(id); location.hash = '#/'; }
+    if (confirm(t('confirm_delete'))) { await db.del(id); location.hash = '#/sessions'; }
   });
 
   f.onsubmit = async e => {
@@ -344,10 +432,9 @@ async function formView(id) {
       if (a === 'feel' && v) v = +v;
       if (b) (out[a] = { ...out[a] })[b] = v; else out[a] = v;
     }
-    const keep = tuningFor(out.class);
-    out.tuning = Object.fromEntries(keep.filter(k => tuning[k]).map(k => [k, tuning[k]]));
+    out.tuning = Object.fromEntries(poolFor(out.class).filter(k => tuning[k]).map(k => [k, tuning[k]]));
     if (f.elements['wind.gust'].value === '') out.wind.gustDir = '';
-    if (!out.wind.shifts) out.wind.shiftA = out.wind.shiftB = '';
+    if (!SHIFTY.includes(out.wind.shifts)) out.wind.shiftA = out.wind.shiftB = '';
     out.wind.changes = readChanges().filter(c => c.time || c.dir || c.speed);
     out.races = out.type === 'regatta' ? readRaces().filter(r => r.result || r.notes) : [];
     if (out.class) store.set('lastClass', out.class);
@@ -384,7 +471,7 @@ async function sessionView(id) {
   const text = (label, v) => (v ? `<div class="lbl muted" style="font-size:13px;font-weight:600">${label}</div><p class="text">${esc(v)}</p>` : '');
   const vk = venueKey(s.venue);
   app.innerHTML = `
-  <a class="back" href="#/">‹ ${t('sessions')}</a>
+  <a class="back" href="#/sessions">‹ ${t('sessions')}</a>
   <div class="row spread"><div><div class="date">${fmtDate(s.date)}${s.start ? ` · ${s.start}${s.end ? '–' + s.end : ''}` : ''}</div>
     <h1 style="margin-top:2px">${vk ? `<a href="#/venue/${encodeURIComponent(vk)}" style="color:inherit">${esc(s.venue.name)}</a>` : '—'}</h1></div>
     <a class="btn ghost small" href="#/edit/${s.id}">${t('edit')}</a></div>
@@ -450,6 +537,11 @@ function settingsView() {
     <div class="seg" role="radiogroup">${[['en', 'English'], ['it', 'Italiano']].map(([k, n]) =>
       `<label><input type="radio" name="lang" value="${k}" ${lang === k ? 'checked' : ''}><span>${n}</span></label>`).join('')}</div>
   </section>
+  <section class="card"><h2>${t('custom')}</h2>
+    <p class="muted" style="margin-top:0">${t('custom_text')}</p>
+    <label class="field"><span class="lbl">${t('class')}</span><select id="cc">${['', ...CLASSES].map(c => `<option value="${esc(c)}">${c ? esc(c) : t('other_classes')}</option>`).join('')}</select></label>
+    <div id="ccBody"></div>
+  </section>
   <section class="card"><h2>${t('backup')}</h2>
     <p class="muted" style="margin-top:0">${t('backup_text')}</p>
     <p id="persist" class="muted" style="font-size:14px"></p>
@@ -457,6 +549,21 @@ function settingsView() {
       <label class="btn ghost">${t('import')}<input type="file" id="imp" accept="application/json,.json" hidden></label></div>
     <p id="msg" style="font-weight:600"></p>
   </section>`;
+  const cc = document.getElementById('cc'), ccBody = document.getElementById('ccBody');
+  const drawCustom = () => {
+    const c = cfgFor(cc.value), pool = ckey(cc.value) in TUNING ? poolFor(cc.value) : [];
+    const chips = (g, items, on) => `<div class="seg">${items.map(([v, label]) => `<label><input type="checkbox" data-g="${g}" value="${esc(v)}" ${on.includes(v) ? 'checked' : ''}><span>${esc(label)}</span></label>`).join('')}</div>`;
+    ccBody.innerHTML = `<span class="lbl muted" style="font-size:13px;font-weight:600">${t('sections')}</span>${chips('sec', SECTIONS.map(x => [x, t(SEC_LABEL[x])]), c.sec)}
+      ${pool.length ? `<span class="lbl muted" style="display:block;margin-top:14px;font-size:13px;font-weight:600">${t('tuning_params')}</span>${chips('tun', pool.map(x => [x, x]), c.tun)}` : ''}
+      <button type="button" class="btn ghost small" id="ccReset" style="margin-top:14px">${t('reset')}</button>`;
+    document.getElementById('ccReset').onclick = () => { const a = cfgAll(); delete a[ckey(cc.value)]; store.set('cfg', JSON.stringify(a)); drawCustom(); };
+  };
+  ccBody.onchange = () => {
+    const pick = g => [...ccBody.querySelectorAll(`[data-g=${g}]:checked`)].map(i => i.value);
+    const prev = cfgFor(cc.value);
+    store.set('cfg', JSON.stringify({ ...cfgAll(), [ckey(cc.value)]: { sec: pick('sec'), tun: ccBody.querySelector('[data-g=tun]') ? pick('tun') : prev.tun } }));
+  };
+  cc.onchange = drawCustom; drawCustom();
   app.querySelectorAll('input[name=lang]').forEach(i => i.onchange = () => { lang = i.value; store.set('lang', lang); route(); });
   navigator.storage?.persisted?.().then(p => { document.getElementById('persist').textContent = t(p ? 'storage_ok' : 'storage_warn'); });
   document.getElementById('exp').onclick = async () => {
@@ -482,16 +589,16 @@ function settingsView() {
   };
 }
 
-function notFound() { app.innerHTML = `<a class="back" href="#/">‹ ${t('sessions')}</a><p class="muted">${t('not_found')}</p>`; }
+function notFound() { app.innerHTML = `<a class="back" href="#/sessions">‹ ${t('sessions')}</a><p class="muted">${t('not_found')}</p>`; }
 
 /* ---------- router ---------- */
 async function route() {
   const [, view = '', id] = location.hash.split('/');
   document.documentElement.lang = lang;
   document.querySelectorAll('[data-t]').forEach(el => { el.textContent = t(el.dataset.t); });
-  const tab = { '': 'list', s: 'list', new: 'list', edit: 'list', venues: 'venues', venue: 'venues', settings: 'settings' }[view];
+  const tab = { '': 'home', sessions: 'list', s: 'list', new: 'list', edit: 'list', venues: 'venues', venue: 'venues', settings: 'settings' }[view];
   document.querySelectorAll('.tabs a').forEach(a => a.classList.toggle('on', a.dataset.tab === tab));
-  const views = { '': listView, new: () => formView(), edit: () => formView(id), s: () => sessionView(id), venues: venuesView, venue: () => venueView(decodeURIComponent(id || '')), settings: settingsView };
+  const views = { '': homeView, sessions: listView, new: () => formView(), edit: () => formView(id), s: () => sessionView(id), venues: venuesView, venue: () => venueView(decodeURIComponent(id || '')), settings: settingsView };
   await (views[view] || listView)();
   window.scrollTo(0, 0);
 }

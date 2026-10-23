@@ -29,3 +29,18 @@ export function windSummary(sessions) {
   }
   return { counts, avg: n ? Math.round((sum / n) * 10) / 10 : null, maxGust: maxGust || null };
 }
+
+// Landing-page numbers; series is the last 12 sessions, oldest first, for the chart
+export function overview(sessions) {
+  const w = windSummary(sessions);
+  const feels = sessions.map(s => s.feel).filter(Boolean);
+  const peak = Math.max(0, ...sessions.map(s => Math.max(s.wind?.gust || 0, s.wind?.speed || 0)));
+  return {
+    count: sessions.length,
+    avg: w.avg,
+    peak: peak || null,
+    venues: new Set(sessions.map(s => venueKey(s.venue)).filter(Boolean)).size,
+    feel: feels.length ? Math.round((feels.reduce((x, y) => x + y, 0) / feels.length) * 10) / 10 : null,
+    series: sortByDate(sessions).slice(0, 12).reverse().map(s => ({ date: s.date, speed: s.wind?.speed || null, gust: s.wind?.gust || null })),
+  };
+}

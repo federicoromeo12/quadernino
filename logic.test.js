@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { venueKey, groupByVenue, windSummary, sortByDate } from './logic.js';
+import { venueKey, groupByVenue, windSummary, sortByDate, overview } from './logic.js';
 
 const a = { id: 'a', date: '2026-05-01', venue: { name: 'Bracciano', osm: 'relation/1' }, wind: { dir: 'SW', speed: 10, gust: 16 } };
 const b = { id: 'b', date: '2026-06-01', venue: { name: 'Lago di Bracciano', osm: 'relation/1' }, wind: { dir: 'SW', speed: 14 } };
@@ -29,4 +29,14 @@ test('windSummary', () => {
   assert.equal(w.avg, 12);
   assert.equal(w.maxGust, 16);
   assert.equal(windSummary([]).avg, null);
+});
+
+test('overview', () => {
+  const o = overview([a, b, c, { ...d, feel: 4 }]);
+  assert.equal(o.count, 4);
+  assert.equal(o.peak, 16);
+  assert.equal(o.venues, 2);
+  assert.equal(o.feel, 4);
+  assert.deepEqual(o.series.map(p => p.date), ['2026-04-01', '2026-04-02', '2026-05-01', '2026-06-01']);
+  assert.equal(overview([]).peak, null);
 });
